@@ -35,7 +35,7 @@ public class DocumentServiceImpl implements DocumentService {
     private int maxDocsInHour;
 
     @Value("${docsystem.max-workflow-between-company}")
-    private int docSystemMaxBetweenCompany;
+    private int maxCreatedDocsBetweenCompany;
 
     private final DocumentRepository documentRepository;
 
@@ -68,19 +68,23 @@ public class DocumentServiceImpl implements DocumentService {
     @Override
     public Document createDocument(DocumentForCreateDTO doc) {
         if (doc == null) {
-            throw new DocumentSystemException(DocumentSystemExceptionType.DOCUMENT_CREATE_ERROR, "");
+            throw new DocumentSystemException(DocumentSystemExceptionType.DOCUMENT_CREATE_EXCEPTION);
         }
         Document document = new Document();
         document.setTitle(doc.getTitle());
         Company firstSide = companyService.findCompanyById(doc.getFirstSideId());
-        docSystemMaxWorkflow(firstSide);
-        docSystemMaxDocsInHour(firstSide);
-
         Company secondSide = companyService.findCompanyById(doc.getSecondSideId());
-        docSystemMaxWorkflow(secondSide);
         if (firstSide.equals(secondSide)) {
-
+            throw new DocumentSystemException(
+                    DocumentSystemExceptionType.DOC_SYSTEM_EXCEPTION,
+                    "Компании не могут быть одинаковыми, id = " + firstSide.getId()
+            );
         }
+        checkMaxDocFlow(firstSide);
+        checkMaxDocsInHour(firstSide);
+        checkMaxDocFlow(secondSide);
+        checkMaxCreatedDocsBetweenCompany(firstSide, secondSide);
+
         document.setFirstSide(firstSide);
         document.setSecondSide(secondSide);
 
@@ -94,23 +98,68 @@ public class DocumentServiceImpl implements DocumentService {
         return documentRepository.save(document);
     }
 
+    private void checkMaxDocFlow(Company company) {
+        if (company == null) {
+            throw new DocumentSystemException(DocumentSystemExceptionType.COMPANY_NOT_FOUND);
+        }
+        int countDocFlow = documentRepository.findCountCompanyWorkflow(company);
+        if (countDocFlow >= maxDocFlow) {
+            throw new DocumentSystemException(DocumentSystemExceptionType.COMPANY_MAX_DOC_FLOW, "id = " + company.getId());
+        }
+    }
+
+    private void checkMaxDocsInHour(Company company) {
+        if (company == null) {
+            throw new DocumentSystemException(DocumentSystemExceptionType.COMPANY_NOT_FOUND);
+        }
+        LocalDateTime finishDateTime = LocalDateTime.now();
+        int countCreateDocsForHour = documentRepository.findCountCreatedDocumentForHour(
+                company,
+                finishDateTime.minusHours(1),
+                finishDateTime
+        );
+        if (countCreateDocsForHour >= maxDocsInHour) {
+            throw new DocumentSystemException(DocumentSystemExceptionType.COMPANY_MAX_DOC_IN_HOUR, "id = " + company.getId());
+        }
+    }
+
+    private void checkMaxCreatedDocsBetweenCompany(Company c1, Company c2) {
+        if (c1 == null || c2 == null) {
+            throw new DocumentSystemException(DocumentSystemExceptionType.COMPANY_NOT_FOUND);
+        }
+        int maxDocsBetweenCompanies = documentRepository.findCountCreatedDocumentsBetweenCompanies(c1, c2);
+        if (maxDocsBetweenCompanies >= maxCreatedDocsBetweenCompany) {
+            throw new DocumentSystemException(
+                    DocumentSystemExceptionType.MAX_CREATED_DOCS_BETWEEN_COMPANIES,
+                    new StringBuilder("id1 = ")
+                            .append(c1.getId())
+                            .append(", ")
+                            .append("id2 = ")
+                            .append(c2.getId())
+                            .toString());
+        }
+    }
+
     @Override
     public Document editDocument(Document doc, String idEditorSide) {
         if (doc == null || doc.getId() == null) {
-            throw new DocumentSystemException(DocumentSystemExceptionType.DOCUMENT_EDIT_ERROR, "");
+            throw new DocumentSystemException(DocumentSystemExceptionType.DOCUMENT_EDIT_EXCEPTION);
         }
         Document document = findDocumentById(doc.getId());
-        isCompleteDocument(document);
+        isNotCompletedDocument(document);
         document.setTitle(doc.getTitle());
         Company editorCompany = companyService.findCompanyById(idEditorSide);
         if (!document.getSecondSide().equals(editorCompany)) {
-
+            throw new DocumentSystemException(
+                    DocumentSystemExceptionType.COMPANIES_NOT_EQUAL_EXCEPTION,
+                    new StringBuilder("Компании не совпадают ")
+                            .append(document.getSecondSide().getId())
+                            .append(" ")
+                            .append(idEditorSide).toString()
+            );
         }
-        Company lastFirstSide = companyService.findCompanyById(document.getFirstSide().getId());
-        if (!document.getFirstSide().equals(lastFirstSide)) {
-
-        }
-        document.setSecondSide(lastFirstSide);
+        Company oldFirstSide = companyService.findCompanyById(document.getFirstSide().getId());
+        document.setSecondSide(oldFirstSide);
         document.setFirstSide(editorCompany);
 
         LocalDateTime dateTime = LocalDateTime.now();
@@ -122,25 +171,36 @@ public class DocumentServiceImpl implements DocumentService {
         return documentRepository.save(document);
     }
 
-    private void isCompleteDocument(Document document) {
+    private void isNotCompletedDocument(Document document) {
         if (document.getDocumentStatus() == Document.Status.COMPLETED) {
             throw new DocumentSystemException(DocumentSystemExceptionType.DOCUMENT_IS_COMPLETE, document.getId());
+        }
+    }
+
+    private void isCanEditOrSignDocument(LocalDateTime dateTime) {
+        if (dateTime.getHour() < docSystemMinWorkHour || dateTime.getHour() > docSystemMaxWorkHour) {
+            throw new DocumentSystemException(
+                    DocumentSystemExceptionType.DOC_SYSTEM_EDIT_OR_SIGN_DOC_EXCEPTION, dateTime.toString()
+            );
         }
     }
 
     @Override
     public Document signDocument(Document doc, String idSignerSide) {
         if (doc == null || doc.getId() == null) {
-            throw new DocumentSystemException(DocumentSystemExceptionType.DOCUMENT_EDIT_ERROR, "");
+            throw new DocumentSystemException(DocumentSystemExceptionType.DOCUMENT_EDIT_EXCEPTION, "");
         }
         Document document = findDocumentById(doc.getId());
-        isCompleteDocument(document);
-        if (!document.isFirstEDS()) {
-
-        }
+        isNotCompletedDocument(document);
         Company singerCompany = companyService.findCompanyById(idSignerSide);
         if (!document.getSecondSide().equals(singerCompany)) {
-
+            throw new DocumentSystemException(
+                    DocumentSystemExceptionType.COMPANIES_NOT_EQUAL_EXCEPTION,
+                    new StringBuilder("Компании не совпадают ")
+                            .append(document.getSecondSide().getId())
+                            .append(" ")
+                            .append(idSignerSide).toString()
+            );
         }
 
         LocalDateTime dateTime = LocalDateTime.now();
@@ -150,46 +210,5 @@ public class DocumentServiceImpl implements DocumentService {
         document.setSecondEDS(true);
         document.setDocumentStatus(Document.Status.COMPLETED);
         return documentRepository.save(document);
-    }
-
-    private void isCanEditOrSignDocument(LocalDateTime now) {
-        if (now.getHour() < docSystemMinWorkHour || now.getHour() > docSystemMaxWorkHour) {
-            throw new DocumentSystemException(
-                    DocumentSystemExceptionType.SYSTEM_EDIT_OR_SIGN_DOC_EXCEPTION, now.toString()
-            );
-        }
-    }
-
-    private void docSystemMaxWorkflow(Company company) {
-        if (company == null) {
-            throw new DocumentSystemException(DocumentSystemExceptionType.COMPANY_MAX_DOC_FLOW, "");
-        }
-        int count = documentRepository.findCountCompanyWorkflow(company);
-        if (count >= maxDocFlow) {
-            throw new DocumentSystemException(DocumentSystemExceptionType.COMPANY_MAX_DOC_FLOW, "");
-        }
-    }
-
-    private void docSystemMaxDocsInHour(Company company) {
-        if (company == null) {
-            throw new DocumentSystemException(DocumentSystemExceptionType.COMPANY_MAX_DOC_FLOW, "");
-        }
-        LocalDateTime finishDateTime = LocalDateTime.now();
-        int countDocPerHour = documentRepository
-                .findCountCreatedDocumentForHour(company, finishDateTime.minusHours(1), finishDateTime);
-        if (countDocPerHour > maxDocsInHour) {
-            throw new DocumentSystemException(DocumentSystemExceptionType.COMPANY_MAX_DOC_FLOW, "");
-        }
-    }
-
-    private void docSystemMaxBetweenCompany(Company company1, Company company2) {
-        if (company1 == null || company2 == null) {
-            throw new DocumentSystemException(DocumentSystemExceptionType.COMPANY_MAX_DOC_FLOW, "");
-        }
-        int maxDocsBetweenCompanies = documentRepository
-                .findCountCreatedDocumentsBetweenCompanies(company1, company2);
-        if (maxDocsBetweenCompanies > docSystemMaxBetweenCompany) {
-            throw new DocumentSystemException(DocumentSystemExceptionType.COMPANY_MAX_DOC_FLOW, "");
-        }
     }
 }

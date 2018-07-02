@@ -13,6 +13,12 @@ public class DocumentSystemException extends IllegalArgumentException {
 
     private DocumentSystemExceptionType exceptionType;
 
+    public DocumentSystemException(DocumentSystemExceptionType type) {
+        super(type.toString());
+        this.exceptionType = type;
+        log.log(Level.WARNING, type.toString());
+    }
+
     public DocumentSystemException(DocumentSystemExceptionType type, String message) {
         super(message);
         this.exceptionType = type;
