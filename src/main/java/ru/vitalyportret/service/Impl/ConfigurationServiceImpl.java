@@ -1,15 +1,8 @@
 package ru.vitalyportret.service.Impl;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import ru.vitalyportret.entity.Company;
-import ru.vitalyportret.exeption.DocumentSystemException;
-import ru.vitalyportret.exeption.DocumentSystemExceptionType;
-import ru.vitalyportret.repository.DocumentRepository;
 import ru.vitalyportret.service.ConfigurationService;
-
-import java.time.LocalDateTime;
 
 @Service
 public class ConfigurationServiceImpl implements ConfigurationService {
@@ -32,13 +25,6 @@ public class ConfigurationServiceImpl implements ConfigurationService {
 
     @Value("${docsystem.max-workflow-between-company}")
     private int maxCreatedDocsBetweenCompany;
-
-    private final DocumentRepository documentRepository;
-
-    @Autowired
-    public ConfigurationServiceImpl(DocumentRepository documentRepository) {
-        this.documentRepository = documentRepository;
-    }
 
     @Override
     public void setUpdateDocMaxHour(int updateDocMaxHour) {
@@ -75,56 +61,27 @@ public class ConfigurationServiceImpl implements ConfigurationService {
     }
 
     @Override
-    public void isCanEditOrSignDocument(LocalDateTime dateTime) {
-        if (dateTime.getHour() < updateDocMinHour || dateTime.getHour() > updateDocMaxHour) {
-            throw new DocumentSystemException(
-                    DocumentSystemExceptionType.DOC_SYSTEM_EDIT_OR_SIGN_DOC_EXCEPTION, dateTime.toString()
-            );
-        }
+    public int getUpdateDocMaxHour() {
+        return updateDocMaxHour;
     }
 
     @Override
-    public void checkMaxDocFlow(Company company) {
-        if (company == null) {
-            throw new DocumentSystemException(DocumentSystemExceptionType.COMPANY_NOT_FOUND);
-        }
-        int countDocFlow = documentRepository.findCountCompanyWorkflow(company);
-        if (countDocFlow >= maxDocFlow) {
-            throw new DocumentSystemException(DocumentSystemExceptionType.COMPANY_MAX_DOC_FLOW, "id = " + company.getId());
-        }
+    public int getUpdateDocMinHour() {
+        return updateDocMinHour;
     }
 
     @Override
-    public void checkMaxDocsInHour(Company company) {
-        if (company == null) {
-            throw new DocumentSystemException(DocumentSystemExceptionType.COMPANY_NOT_FOUND);
-        }
-        LocalDateTime finishDateTime = LocalDateTime.now();
-        int countCreateDocsForHour = documentRepository.findCountCreatedDocumentForHour(
-                company,
-                finishDateTime.minusHours(1),
-                finishDateTime
-        );
-        if (countCreateDocsForHour >= maxDocsInHour) {
-            throw new DocumentSystemException(DocumentSystemExceptionType.COMPANY_MAX_DOC_IN_HOUR, "id = " + company.getId());
-        }
+    public int getMaxDocFlow() {
+        return maxDocFlow;
     }
 
     @Override
-    public void checkMaxCreatedDocsBetweenCompany(Company c1, Company c2) {
-        if (c1 == null || c2 == null) {
-            throw new DocumentSystemException(DocumentSystemExceptionType.COMPANY_NOT_FOUND);
-        }
-        int maxDocsBetweenCompanies = documentRepository.findCountCreatedDocumentsBetweenCompanies(c1, c2);
-        if (maxDocsBetweenCompanies >= maxCreatedDocsBetweenCompany) {
-            throw new DocumentSystemException(
-                    DocumentSystemExceptionType.MAX_CREATED_DOCS_BETWEEN_COMPANIES,
-                    new StringBuilder("id1 = ")
-                            .append(c1.getId())
-                            .append(", ")
-                            .append("id2 = ")
-                            .append(c2.getId())
-                            .toString());
-        }
+    public int getMaxDocsInHour() {
+        return maxDocsInHour;
+    }
+
+    @Override
+    public int getMaxCreatedDocsBetweenCompany() {
+        return maxCreatedDocsBetweenCompany;
     }
 }

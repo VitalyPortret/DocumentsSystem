@@ -26,7 +26,7 @@ public class DocumentServiceImpl implements DocumentService {
 
     private final CompanyService companyService;
 
-    private final ConfigurationService configurationService;
+    private final ConfigurationService config;
 
     @Autowired
     public DocumentServiceImpl(DocumentRepository documentRepository,
@@ -34,7 +34,7 @@ public class DocumentServiceImpl implements DocumentService {
                                ConfigurationService configurationService) {
         this.documentRepository = documentRepository;
         this.companyService = companyService;
-        this.configurationService = configurationService;
+        this.config = configurationService;
     }
 
     @Override
@@ -69,10 +69,10 @@ public class DocumentServiceImpl implements DocumentService {
                     "Компании не могут быть одинаковыми, id = " + firstSide.getId()
             );
         }
-        configurationService.checkMaxDocFlow(firstSide);
-        configurationService.checkMaxDocsInHour(firstSide);
-        configurationService.checkMaxDocFlow(secondSide);
-        configurationService.checkMaxCreatedDocsBetweenCompany(firstSide, secondSide);
+        checkMaxDocFlow(firstSide);
+        checkMaxDocsInHour(firstSide);
+        checkMaxDocFlow(secondSide);
+        checkMaxCreatedDocsBetweenCompany(firstSide, secondSide);
 
         document.setFirstSide(firstSide);
         document.setSecondSide(secondSide);
@@ -85,6 +85,48 @@ public class DocumentServiceImpl implements DocumentService {
         document.setSecondEDS(false);
         document.setDocumentStatus(Document.Status.CREATED);
         return documentRepository.save(document);
+    }
+
+    private void checkMaxDocFlow(Company company) {
+        if (company == null) {
+            throw new DocumentSystemException(DocumentSystemExceptionType.COMPANY_NOT_FOUND);
+        }
+        int countDocFlow = documentRepository.findCountCompanyWorkflow(company);
+        if (countDocFlow >= config.getMaxDocFlow()) {
+            throw new DocumentSystemException(DocumentSystemExceptionType.COMPANY_MAX_DOC_FLOW, "id = " + company.getId());
+        }
+    }
+
+    private void checkMaxDocsInHour(Company company) {
+        if (company == null) {
+            throw new DocumentSystemException(DocumentSystemExceptionType.COMPANY_NOT_FOUND);
+        }
+        LocalDateTime finishDateTime = LocalDateTime.now();
+        int countCreateDocsForHour = documentRepository.findCountCreatedDocumentForHour(
+                company,
+                finishDateTime.minusHours(1),
+                finishDateTime
+        );
+        if (countCreateDocsForHour >= config.getMaxDocsInHour()) {
+            throw new DocumentSystemException(DocumentSystemExceptionType.COMPANY_MAX_DOC_IN_HOUR, "id = " + company.getId());
+        }
+    }
+
+    private void checkMaxCreatedDocsBetweenCompany(Company c1, Company c2) {
+        if (c1 == null || c2 == null) {
+            throw new DocumentSystemException(DocumentSystemExceptionType.COMPANY_NOT_FOUND);
+        }
+        int maxDocsBetweenCompanies = documentRepository.findCountCreatedDocumentsBetweenCompanies(c1, c2);
+        if (maxDocsBetweenCompanies >= config.getMaxCreatedDocsBetweenCompany()) {
+            throw new DocumentSystemException(
+                    DocumentSystemExceptionType.MAX_CREATED_DOCS_BETWEEN_COMPANIES,
+                    new StringBuilder("id1 = ")
+                            .append(c1.getId())
+                            .append(", ")
+                            .append("id2 = ")
+                            .append(c2.getId())
+                            .toString());
+        }
     }
 
     @Override
@@ -110,12 +152,20 @@ public class DocumentServiceImpl implements DocumentService {
         document.setFirstSide(editorCompany);
 
         LocalDateTime dateTime = LocalDateTime.now();
-        configurationService.isCanEditOrSignDocument(dateTime);
+        isCanEditOrSignDocument(dateTime);
         document.setLastEditDate(dateTime);
 
         document.setFirstEDS(true);
         document.setSecondEDS(false);
         return documentRepository.save(document);
+    }
+
+    private void isCanEditOrSignDocument(LocalDateTime dateTime) {
+        if (dateTime.getHour() < config.getUpdateDocMinHour() || dateTime.getHour() > config.getUpdateDocMaxHour()) {
+            throw new DocumentSystemException(
+                    DocumentSystemExceptionType.DOC_SYSTEM_EDIT_OR_SIGN_DOC_EXCEPTION, dateTime.toString()
+            );
+        }
     }
 
     private void isNotCompletedDocument(Document document) {
@@ -143,7 +193,7 @@ public class DocumentServiceImpl implements DocumentService {
         }
 
         LocalDateTime dateTime = LocalDateTime.now();
-        configurationService.isCanEditOrSignDocument(dateTime);
+        isCanEditOrSignDocument(dateTime);
         document.setLastEditDate(dateTime);
 
         document.setSecondEDS(true);
