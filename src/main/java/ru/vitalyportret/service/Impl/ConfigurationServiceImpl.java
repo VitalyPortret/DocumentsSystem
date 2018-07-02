@@ -1,8 +1,15 @@
 package ru.vitalyportret.service.Impl;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import ru.vitalyportret.entity.Company;
+import ru.vitalyportret.exeption.DocumentSystemException;
+import ru.vitalyportret.exeption.DocumentSystemExceptionType;
+import ru.vitalyportret.repository.DocumentRepository;
 import ru.vitalyportret.service.ConfigurationService;
+
+import java.time.LocalDateTime;
 
 @Service
 public class ConfigurationServiceImpl implements ConfigurationService {
@@ -18,13 +25,20 @@ public class ConfigurationServiceImpl implements ConfigurationService {
     private int updateDocMinHour;
 
     @Value("${docsystem.max-workflow}")
-    private int docSystemMaxWorkflow;
+    private int maxDocFlow;
 
     @Value("${docsystem.max-docs-in-hour}")
-    private int docSystemMaxDocsInHour;
+    private int maxDocsInHour;
 
     @Value("${docsystem.max-workflow-between-company}")
-    private int docSystemMaxBetweenCompany;
+    private int maxCreatedDocsBetweenCompany;
+
+    private final DocumentRepository documentRepository;
+
+    @Autowired
+    public ConfigurationServiceImpl(DocumentRepository documentRepository) {
+        this.documentRepository = documentRepository;
+    }
 
     @Override
     public void setUpdateDocMaxHour(int updateDocMaxHour) {
@@ -46,17 +60,71 @@ public class ConfigurationServiceImpl implements ConfigurationService {
     }
 
     @Override
-    public void setDocSystemMaxWorkflow(int docSystemMaxWorkflow) {
-        this.docSystemMaxWorkflow = docSystemMaxWorkflow;
+    public void setMaxDocFlow(int maxDocFlow) {
+        this.maxDocFlow = maxDocFlow;
     }
 
     @Override
-    public void setDocSystemMaxDocsInHour(int docSystemMaxDocsInHour) {
-        this.docSystemMaxDocsInHour = docSystemMaxDocsInHour;
+    public void setMaxDocsInHour(int maxDocsInHour) {
+        this.maxDocsInHour = maxDocsInHour;
     }
 
     @Override
-    public void setDocSystemMaxBetweenCompany(int docSystemMaxBetweenCompany) {
-        this.docSystemMaxBetweenCompany = docSystemMaxBetweenCompany;
+    public void setMaxCreatedDocsBetweenCompany(int maxCreatedDocsBetweenCompany) {
+        this.maxCreatedDocsBetweenCompany = maxCreatedDocsBetweenCompany;
+    }
+
+    @Override
+    public void isCanEditOrSignDocument(LocalDateTime dateTime) {
+        if (dateTime.getHour() < updateDocMinHour || dateTime.getHour() > updateDocMaxHour) {
+            throw new DocumentSystemException(
+                    DocumentSystemExceptionType.DOC_SYSTEM_EDIT_OR_SIGN_DOC_EXCEPTION, dateTime.toString()
+            );
+        }
+    }
+
+    @Override
+    public void checkMaxDocFlow(Company company) {
+        if (company == null) {
+            throw new DocumentSystemException(DocumentSystemExceptionType.COMPANY_NOT_FOUND);
+        }
+        int countDocFlow = documentRepository.findCountCompanyWorkflow(company);
+        if (countDocFlow >= maxDocFlow) {
+            throw new DocumentSystemException(DocumentSystemExceptionType.COMPANY_MAX_DOC_FLOW, "id = " + company.getId());
+        }
+    }
+
+    @Override
+    public void checkMaxDocsInHour(Company company) {
+        if (company == null) {
+            throw new DocumentSystemException(DocumentSystemExceptionType.COMPANY_NOT_FOUND);
+        }
+        LocalDateTime finishDateTime = LocalDateTime.now();
+        int countCreateDocsForHour = documentRepository.findCountCreatedDocumentForHour(
+                company,
+                finishDateTime.minusHours(1),
+                finishDateTime
+        );
+        if (countCreateDocsForHour >= maxDocsInHour) {
+            throw new DocumentSystemException(DocumentSystemExceptionType.COMPANY_MAX_DOC_IN_HOUR, "id = " + company.getId());
+        }
+    }
+
+    @Override
+    public void checkMaxCreatedDocsBetweenCompany(Company c1, Company c2) {
+        if (c1 == null || c2 == null) {
+            throw new DocumentSystemException(DocumentSystemExceptionType.COMPANY_NOT_FOUND);
+        }
+        int maxDocsBetweenCompanies = documentRepository.findCountCreatedDocumentsBetweenCompanies(c1, c2);
+        if (maxDocsBetweenCompanies >= maxCreatedDocsBetweenCompany) {
+            throw new DocumentSystemException(
+                    DocumentSystemExceptionType.MAX_CREATED_DOCS_BETWEEN_COMPANIES,
+                    new StringBuilder("id1 = ")
+                            .append(c1.getId())
+                            .append(", ")
+                            .append("id2 = ")
+                            .append(c2.getId())
+                            .toString());
+        }
     }
 }

@@ -1,14 +1,26 @@
 package ru.vitalyportret.service;
 
+import ru.vitalyportret.entity.Company;
+
+import java.time.LocalDateTime;
+
 public interface ConfigurationService {
 
     void setUpdateDocMaxHour(int updateDocMaxHour);
 
     void setUpdateDocMinHour(int updateDocMinHour);
 
-    void setDocSystemMaxWorkflow(int docSystemMaxWorkflow);
+    void setMaxDocFlow(int maxDocFlow);
 
-    void setDocSystemMaxDocsInHour(int docSystemMaxDocsInHour);
+    void setMaxDocsInHour(int maxDocsInHour);
 
-    void setDocSystemMaxBetweenCompany(int docSystemMaxBetweenCompany);
+    void setMaxCreatedDocsBetweenCompany(int maxCreatedDocsBetweenCompany);
+
+    void isCanEditOrSignDocument(LocalDateTime dateTime);
+
+    void checkMaxDocFlow(Company company);
+
+    void checkMaxDocsInHour(Company company);
+
+    void checkMaxCreatedDocsBetweenCompany(Company c1, Company c2);
 }
